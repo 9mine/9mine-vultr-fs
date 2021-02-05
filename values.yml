@@ -1,0 +1,118 @@
+image: 
+  repository: 9mine/9mine-vultr-fs
+  tag: "main"
+  pullPolicy: Always
+
+initContainerImage:
+  repository: 9mine/execfuse-jinja2
+  tag: "master"
+  pullPolicy: Always
+
+securityContext: 
+  privileged: true
+  capabilities:
+    add:
+      - SYS_ADMIN
+
+service:
+  type: ClusterIP
+  port: 3000
+  
+ClusterIPRange:
+    from: 3001
+    to: 3020
+
+description: "vultrfs"
+
+fs: |
+    {% include './common.j2' %}
+    fs:
+      # root
+      "/":
+        <<: *is_dir
+        readdir: 
+          sh: ls /accounts 
+        # /<id>
+        "/[0-9]+":
+          <<: *is_dir
+          name: id
+          readdir: 
+            list: 
+              - version
+          # /<id>/.console.lua
+          "/.console.lua":
+            <<: *is_file
+            read_file: 
+              sh: |
+                cat <<EOF
+                   print(".console.lua stub")       
+                EOF
+
+          # /<id>/.init.lua
+          "/.init.lua":
+            <<: *is_file
+            read_file: 
+              sh: |
+                cat <<EOF
+                   print(".init.lua stub")
+                     print(".message_handler.lua stub")      
+                EOF
+      
+          "/n":
+            <<: *is_dir
+            "/cmdchan":
+              <<: *is_dir
+              "/cmdchan_output":
+                getattr: 
+                  sh: (ls /accounts/$id/output >> /dev/null 2>&1 && echo 'ino=1 mode=-rwxr-xr-x nlink=1 uid=0 gid=0 rdev=0 size=0 blksize=512 blocks=2 atime=0 mtime=0 ctime=0 ')
+                read_file:
+                  sh: cat /accounts/$id/output
+              "/chan":
+                <<: *is_dir
+                "/cmd":
+                  <<: *is_file
+                  write_file:
+                    sh: |
+                        str=`cat $CACHE_FILE_NAME`
+                        rm -f /accounts/$id/output
+                        eval "export VULTR_API_KEY=`cat /accounts/${id}/api` && vultr-cli $str" > /accounts/$id/out 2>&1
+                        cp /accounts/$id/out /accounts/$id/output
+
+          "/version":
+            <<: *is_file
+            read_file:
+              sh: export VULTR_API_KEY=`cat /accounts/${id}/api` && vultr-cli version
+
+
+profile: |
+    echo --- start of profile loading ---
+    load file2chan
+    load std
+    ndb/cs
+    for host_var in `{ os env } { '{'$host_var'}' }
+    
+    dir = $EXPORT_PATH
+    port = $NINEP_PUBLIC_PORT
+    echo $NINEP_PUBLIC_HOST > /dev/sysname 
+    test -d /mnt/registry || mkdir -p /mnt/registry
+    mount -A tcp!registry!registry /mnt/registry
+    VULTR_DIR = /tmp/aws/cmd
+    test -d $VULTR_DIR || mkdir -p $VULTR_DIR
+    load mpexpr
+    fs_port = ${expr $NINEP_PUBLIC_PORT 1 +}
+    file2chan $VULTR_DIR^/vultr {} {
+        load mpexpr
+        var=${expr 10 rand}
+        echo new id is $var
+        echo hostname is `{os hostname}
+        (api) = `{echo ${rget data}} 
+        `{os /bin/bash -c 'mkdir -p /accounts/'^$var}
+        `{os /bin/bash -c 'echo '^$api^' > /accounts/'^$var^'/api'}
+
+        grid/reglisten -A -r description 'user id is '^$var tcp!*!^$fs_port { export $dir^/^$var & } &
+        fs_port=${expr $fs_port 1 +}
+    }
+        
+    grid/reglisten -A -r description ${quote $NINEP_DESCRIPTION} 'tcp!*!'^$port { export $VULTR_DIR & }
+    test -n $status && os pkill -9 emu-g
+    echo --- end of profile loading ---

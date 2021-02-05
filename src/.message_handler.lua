@@ -1,0 +1,1 @@
+print(".message_handler.lua stub")

@@ -1,0 +1,61 @@
+{% raw %}{% include './common.j2' %}{% endraw %}
+fs:
+  # root
+  "/":
+    <<: *is_dir
+    readdir: 
+      sh: ls /accounts 
+    # /<id>
+    "/[0-9]+":
+      <<: *is_dir
+      name: id
+      readdir: 
+        list: 
+          - version
+      # /<id>/.console.lua
+      "/.console.lua":
+        <<: *is_file
+        read_file: 
+          sh: |
+            cat <<EOF
+{% filter indent(15, first=True) -%}
+  {% include '.console.lua'%}
+{%- endfilter %}       
+            EOF
+
+      # /<id>/.init.lua
+      "/.init.lua":
+        <<: *is_file
+        read_file: 
+          sh: |
+            cat <<EOF
+{% filter indent(15, first=True) -%}
+  {% include '.init.lua'%}
+  {% include '.message_handler.lua'%}
+{%- endfilter %}      
+            EOF
+  
+      "/n":
+        <<: *is_dir
+        "/cmdchan":
+          <<: *is_dir
+          "/cmdchan_output":
+            getattr: 
+              sh: (ls /accounts/$id/output >> /dev/null 2>&1 && echo 'ino=1 mode=-rwxr-xr-x nlink=1 uid=0 gid=0 rdev=0 size=0 blksize=512 blocks=2 atime=0 mtime=0 ctime=0 ')
+            read_file:
+              sh: cat /accounts/$id/output
+          "/chan":
+            <<: *is_dir
+            "/cmd":
+              <<: *is_file
+              write_file:
+                sh: |
+                    str=`cat $CACHE_FILE_NAME`
+                    rm -f /accounts/$id/output
+                    eval "export VULTR_API_KEY=`cat /accounts/${id}/api` && vultr-cli $str" > /accounts/$id/out 2>&1
+                    cp /accounts/$id/out /accounts/$id/output
+
+      "/version":
+        <<: *is_file
+        read_file:
+          sh: export VULTR_API_KEY=`cat /accounts/${id}/api` && vultr-cli version
