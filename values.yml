@@ -134,7 +134,46 @@ fs: |
             read_file: 
               sh: |
                 cat <<EOF
-                   print(".init.lua stub")
+                   local function set_texture(entry, entity)
+                       local prefix = init_path:match("/$") and init_path:sub(1, -2) or init_path
+                       if not prefix then
+                           return
+                       end
+                       local tx_name = "9mine-vultr-fs-icon.png"
+                       if entry.platform_string == prefix .. "/instance/get" then
+                           texture.download("https://www.vultr.com/favicon/android-chrome-512x512.png", true, tx_name, "9mine-vultr-fs")
+                           entity:set_properties({
+                               visual = "cube",
+                               textures = {tx_name, tx_name, tx_name, tx_name, tx_name, tx_name}
+                           })
+                       end
+                   end
+                   class "vultr_cmdchan"("cmdchan")
+
+                   function vultr_cmdchan:vultr_cmdchan(connection, cmdchan_path)
+                       self.connection = connection
+                       self.cmdchan_path = cmdchan_path
+                   end
+
+                   function vultr_cmdchan:write(command)
+                       local conn = self.connection.conn
+                       local f = conn:newfid()
+                       print("Write " .. command .. " to " .. self.cmdchan_path)
+                       conn:walk(conn.rootfid, f, self.cmdchan_path)
+                       conn:open(f, 1)
+                       local buf = data.new(command)
+                       conn:write(f, 0, buf)
+                       conn:clunk(f)
+                   end
+
+                   function vultr_cmdchan:execute(command, location)
+                       local tmp_file = "/n/cmdchan/cmdchan_output"
+                       pcall(vultr_cmdchan.write, self, command, location)
+                       return select(2, pcall(vultr_cmdchan.read, self, tmp_file))
+                   end
+                   platform.cmdchan = vultr_cmdchan(platform.connection, core_conf:get("cmdchan_path"))
+                   register.add_texture_handler(init_path .. "9mine-vultr-fs", set_texture)
+
                      local function vultr_message_handler(player_name, message)
                        if message:match("^vultr%-cli ") then
                            local player = minetest.get_player_by_name(player_name)
