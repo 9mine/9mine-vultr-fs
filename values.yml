@@ -39,6 +39,7 @@ fs: |
           readdir: 
             list: 
               - version
+              - instance
           # /<id>/.console.lua
           "/.console.lua":
             <<: *is_file
